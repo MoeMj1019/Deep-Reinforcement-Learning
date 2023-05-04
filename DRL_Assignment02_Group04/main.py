@@ -17,20 +17,27 @@ logger.disabled = True
 plt.rcParams["figure.figsize"] = [5, 5]
 plt.rcParams["figure.autolayout"] = True
 
+def test():
+    a = {1:(1,2) , 2: (2,3) , 3:(3,4)}
+    b = {1:(1,2) , 2: (2,4) , 3:(3,4)}
+    print(a==b)
+
 if __name__ == "__main__":
+    # test()
+
     # variables for training
     episodes_list = [50,200,500,1000,10000]
     # for both value iteration and MC estimates
     gamma=0.9
     # only for value iteration
-    theta=0.001
+    theta=0.01
     ignore_converged_s=0.2
     # only for MC estimates
     max_steps_per_iteration=100
 
     # variables for rendering , of one cell in the grid
     scale = 16
-    
+
     # creating simple grid
     world = GridWorld(5,5 ,
             terminalState={'goal': [(1,4)],
@@ -56,22 +63,26 @@ if __name__ == "__main__":
     # render.renderEnv(style='image', title='more complex Grid', results=False)
     # delete objects from the grid
     # world.deleteObject((4,0),(4,2))
-    # render.renderEnv(style='image', title='more complex Grid', results=False)
-
+    # render.renderEnv(style='image', title='more complex Grid', results=False)s
 
     # trainig a model for x episodes using value iteration and MC estimates
     for episodes in episodes_list:
+
         if episodes in episodes_list[::2]: # value iteration
             _ , iterations = agent.valueIteration(world, max_iterations=episodes, gamma=gamma, theta=theta , ignore=ignore_converged_s) 
             render.renderEnv(style='image', results=True,
-                title=f'valueIteration:\n gamma:{gamma},theta:{theta},ignore:{ignore_converged_s},converged_in={iterations}')
+                title=f'value iteration:\n gamma:{gamma},theta:{theta},ignore:{ignore_converged_s},converged_in={iterations}')
             
-        if episodes in episodes_list[:]: # MC estimates policy evaluation
+        if episodes in episodes_list[:-1]: # MC estimates policy evaluation
             agent.policy = agent.policyGenerator(world)
-            agent.evaluatePolicy_MC(world, policy=agent.policy, samples=episodes , max_steps=max_steps_per_iteration)
+            agent.evaluatePolicyLoop_MC(world, policy=agent.policy, samples=episodes , max_steps=max_steps_per_iteration)
             agent.policy = agent.prob_to_determin_policy(world, agent.policy)
             render.renderEnv(style='color map', results=True,
-                title=f'MC_estimates on heuristic policy:\n gamma:{gamma},max_stpPerIter:{max_steps_per_iteration},episodes={episodes}')
+                title=f'MC estimates on heuristic policy:\n gamma:{gamma},max_stpPerIter:{max_steps_per_iteration},episodes={episodes}')       
+            
     # render.end()
     render.show()
+    
+    print('############################## Done ##############################')
+
 

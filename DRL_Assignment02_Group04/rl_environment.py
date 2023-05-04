@@ -7,8 +7,8 @@ class GridWorld:
     a grid world class
     a state is a tuple (x,y) 
     '''
-    def __init__(self,width = 5, hight = 5, startState=(0,0), terminalState={}, terrain={} ,possible_actions=[],
-                setRewards={} , environmentDynamics='deterministic') -> None:
+    def __init__(self,width = 5, hight = 5, startState=(0,0), terminalState={}, terrain={} ,possible_actions=None,
+                actions_vectors=None, setRewards={} , environmentDynamics='deterministic') -> None:
         '''
         a state is a tuple (x,y) 
         width : width of environment
@@ -25,7 +25,12 @@ class GridWorld:
         self.startState = startState # for the reseting
         self.state = startState
         self.validStates = tuple()
-        self.possibleActions = possible_actions
+        if possible_actions is None or actions_vectors is None:
+            self.possibleActions = ['L', 'U', 'R', 'D'] # default actions
+            self.actionsVectors = {'L': (0, -1), 'U': (-1, 0), 'R': (0, 1), 'D': (1, 0)} # default actions vectors
+        else:
+            self.possibleActions = possible_actions
+            self.actionsVectors = actions_vectors
         self.terminalStates = terminalState # dictionsry/map of terminal state types as keys and positions as values
         self.terrain = terrain # dictionsry/map of terrain types as keys and positions as values
         self.setRewards = setRewards
@@ -97,6 +102,7 @@ class GridWorld:
         self.startState = kwargs.get('startState', self.startState)
         self.setRewards = kwargs.get('setRewards', self.setRewards)
         self.possibleActions = kwargs.get('possibleActions', self.possibleActions)
+        self.actionsVectors = kwargs.get('actionsVectors', self.actionsVectors)
         self.transitionProb = kwargs.get('transitionProb', self.transitionProb)
         self.environmentDynamics = kwargs.get('environmentDynamics', self.environmentDynamics)
         self.__configure()

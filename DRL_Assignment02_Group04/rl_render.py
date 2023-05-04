@@ -71,26 +71,39 @@ class Render:
     def draw_values(self, axes:plt.Axes,**kwargs): # draw values on the grid
         state_values = self.agent.stateValueFunc
         policy = self.agent.policy
-
-        symbols = {'L':'←','U':'↑','R':'→', 'D':'↓'}
+        symbols = {'L':'←','U':'↑','R':'→', 'D':'↓','goal':'┼','negative_goal':'─'}
         if isinstance(state_values, dict):
-            x_offset = state_values.get('y_offset', 0.5)
-            y_offset = state_values.get('y_offset', 0.8)
-            for key , value in state_values.items(): 
+            x_offset = kwargs.get('sv_x_offset', 0.5)
+            y_offset = kwargs.get('sv_y_offset', 0.8)   
+            for key , value in state_values.items():
                 text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color='black')
                 text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
                                 key[0]*(self.scale + 1) + (self.scale * y_offset),
                                 symbols.get(value , value) , text_kwargs)
         if isinstance(policy, dict):
-            x_offset = policy.get('y_offset', 0.5)
-            y_offset = policy.get('y_offset', 0.5)
+            x_offset = kwargs.get('policy_x_offset', 0.5)
+            y_offset = kwargs.get('policy_y_offset', 0.4)
             for key , value in policy.items(): 
                 text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color='black')
-                text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
+                try:
+                    if key in self.env.terminalStates.get('goal', []):
+                        text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
+                                    key[0]*(self.scale + 1) + (self.scale * y_offset),
+                                    symbols.get('goal', '+') , text_kwargs)
+                    elif key in self.env.terminalStates.get('negative_goal', []):
+                        text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
+                                    key[0]*(self.scale + 1) + (self.scale * y_offset),
+                                    symbols.get('negative_goal', '-') , text_kwargs)
+                    else:
+                        text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
+                                key[0]*(self.scale + 1) + (self.scale * y_offset),
+                                symbols.get(value , value) , text_kwargs)
+                except AttributeError:
+                    text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
                                 key[0]*(self.scale + 1) + (self.scale * y_offset),
                                 symbols.get(value , value) , text_kwargs)
                 
-    def colorState(self, img, state,fill = 'black'):
+    def colorState(self, img, state ,fill = 'black'):
         colors = {'black' : (0,0,0,1),
                     'white' : (1,1,1,1),
                     'grey' : (0.2,0.2,0.2,1),
