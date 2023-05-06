@@ -229,7 +229,7 @@ class GridWorld:
         try:
             new_state_index = np.random.choice(len(possible_states), p=prob_states)
         except ValueError: ## ERORO 
-            print(state,action,possible_states,prob_states)
+            print('ValueError, GridWorld::interact :', state,action,possible_states,prob_states)
         new_state = possible_states[new_state_index]
 
         return new_state

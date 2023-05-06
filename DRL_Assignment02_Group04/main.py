@@ -6,8 +6,10 @@ import matplotlib.pyplot as plt
 import logging
 import warnings
 
+import copy
+
 warnings.filterwarnings('ignore')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(lineno)d - %(levelname)s : %(message)s',
+logging.basicConfig(level=logging.INFO, format='%(finame)s - %(lineno)d - %(levelname)s : %(message)s',
                      datefmt='%H:%M:%S')
 logger = logging.getLogger('my-logger')
 # logger.propagate = False
@@ -18,15 +20,18 @@ plt.rcParams["figure.figsize"] = [5, 5]
 plt.rcParams["figure.autolayout"] = True
 
 def test():
-    a = {1:(1,2) , 2: (2,3) , 3:(3,4)}
-    b = {1:(1,2) , 2: (2,4) , 3:(3,4)}
-    print(a==b)
+    a = np.zeros((5,5,4))
+    a[0,0,0] = 4
+    a[0,0,1] = 4
+    a[0,0,2] = 3
+    a[0,0,3] = 4
+    print(np.argmax(a[0,0,:]))
 
 if __name__ == "__main__":
-    # test()
+    test()
 
     # variables for training
-    episodes_list = [50,200,500,1000,10000]
+    episodes_list = [10,50,200,500,1000,10000]
     # for both value iteration and MC estimates
     gamma=0.9
     # only for value iteration
@@ -68,21 +73,39 @@ if __name__ == "__main__":
     # trainig a model for x episodes using value iteration and MC estimates
     for episodes in episodes_list:
 
-        if episodes in episodes_list[::2]: # value iteration
-            _ , iterations = agent.valueIteration(world, max_iterations=episodes, gamma=gamma, theta=theta , ignore=ignore_converged_s) 
-            render.renderEnv(style='image', results=True,
-                title=f'value iteration:\n gamma:{gamma},theta:{theta},ignore:{ignore_converged_s},converged_in={iterations}')
+        # if episodes in episodes_list[:3]: # value iteration
+        #     _ , iterations = agent.valueIteration(world, max_iterations=episodes, gamma=gamma, theta=theta , ignore=ignore_converged_s) 
+        #     render.renderEnv(style='image', results=True,
+        #         title=f'value iteration:\n gamma:{gamma},theta:{theta},ignore:{ignore_converged_s},converged_in={iterations}')
             
-        if episodes in episodes_list[:-1]: # MC estimates policy evaluation
-            agent.policy = agent.policyGenerator(world)
-            agent.evaluatePolicyLoop_MC(world, policy=agent.policy, samples=episodes , max_steps=max_steps_per_iteration)
+        # if episodes in episodes_list[:3]: # MC estimates policy evaluation
+        #     agent.policy = agent.policyGenerator(world)
+        #     agent.evaluatePolicyLoop_MC(world, policy=agent.policy, samples=episodes , max_steps=max_steps_per_iteration)
+        #     agent.policy = agent.prob_to_determin_policy(world, agent.policy)
+        #     render.renderEnv(style='color map', results=True,
+        #         title=f'MC estimates on heuristic policy:\n gamma:{gamma},max_stpPerIter:{max_steps_per_iteration},episodes={episodes}')
+
+
+        if episodes in episodes_list[:]: # policy iteration # TODO: fix policy iteration
+            heuristic_pi = agent.policyGenerator(world)
+            # agent.policy = agent.prob_to_determin_policy(world, heuristic_pi)
+            # render.renderEnv(style='color map', results=True,
+            #     title=f'starting policy')
+
+            _ , iterations = agent.policyIteration(world,policy=heuristic_pi, max_iterations=episodes, gamma=gamma,
+                                                   evaluationMethod='DP', theta=0.01) # there's some bugs in the MC approach
+            logging.info('############################## Final Results ##############################')
+            print('policy : \n', agent.policy)
+            print('state_values: \n', agent.stateValueFunc)
+
             agent.policy = agent.prob_to_determin_policy(world, agent.policy)
-            render.renderEnv(style='color map', results=True,
-                title=f'MC estimates on heuristic policy:\n gamma:{gamma},max_stpPerIter:{max_steps_per_iteration},episodes={episodes}')       
+            logging.info('\n## Deterministic policy:'  , agent.policy)
+            render.renderEnv(style='image', results=True,
+                title=f'policy iteration:\n gamma:{gamma},theta:{theta},converged_in={iterations}')
             
     # render.end()
     render.show()
     
-    print('############################## Done ##############################')
+    logging.info('############################## Done ##############################')
 
 

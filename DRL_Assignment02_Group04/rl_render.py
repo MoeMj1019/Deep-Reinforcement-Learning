@@ -9,7 +9,6 @@ class Render:
         self.env = env
         self.agent = agent
         # self.fig, self.ax = plt.subplots()
-        # self.fig.set_self.scale_inches(5, 5)
         self.scale = scale
         self.textures_map = textures_map
         # if textures_map: # check if dimensions of and sizes of textures are fitting
@@ -125,13 +124,15 @@ class Render:
             v_max = max([v**2 for v in state_values.values()])
             v_min = min(state_values.values())
 
-            for state , value in state_values.items():
-                if self.env.isValidState(state):
-                    x = state[0]*(self.scale +1)+1
-                    y = state[1]*(self.scale +1)+1
-
+        for state , value in state_values.items():
+            if self.env.isValidState(state):
+                x = state[0]*(self.scale +1)+1
+                y = state[1]*(self.scale +1)+1
+                try:
                     v_scaled = (value - v_min) / (v_max - v_min)
                     img[x:x+self.scale,y:y+self.scale,:] = (v_scaled,0,v_scaled)
+                except ZeroDivisionError:
+                    img[x:x+self.scale,y:y+self.scale,:] = (1,0,1)
 
     def renderEnv(self,style = 'image', title:str='Gridworld', results=False, **kwargs):
         '''

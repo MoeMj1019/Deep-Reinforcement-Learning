@@ -1,6 +1,15 @@
 from rl_environment import GridWorld
 import numpy as np
 import copy
+import logging
+import warnings
+
+warnings.filterwarnings('ignore')
+logging.basicConfig(level=logging.INFO, format='%(filename)s - %(lineno)d - %(levelname)s : %(message)s',
+                     datefmt='%H:%M:%S')
+logger = logging.getLogger('my-logger')
+# logger.propagate = False
+logger.disabled = True
 
 class Agent: 
     '''
@@ -62,55 +71,31 @@ class Agent:
                     if y_distance < 0:
                         new_policy[(x,y)] = np.array([one_direction_prob if a == 'R' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                 (one_direction_prob  if a == 'R' else non_target_prob)\
-                        #                     for a in self.actions}
                     else:
                         new_policy[(x,y)] = np.array([one_direction_prob if a == 'L' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                 (one_direction_prob  if a == 'L' else non_target_prob)\
-                        #                     for a in self.actions}
                 elif y_distance == 0:
                     if x_distance < 0:
                         new_policy[(x,y)] = np.array([one_direction_prob if a == 'D' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                 (one_direction_prob  if a == 'D' else non_target_prob)\
-                        #                     for a in self.actions}
                     else:
                         new_policy[(x,y)] = np.array([one_direction_prob if a == 'U' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                     (one_direction_prob  if a == 'U' else non_target_prob)\
-                        #                     for a in self.actions}
                         
                 randomize_check = np.random.choice(4,size=4,replace=False)
                 for i in randomize_check:                
                     if x_distance < 0 and y_distance < 0 and i == 0:
                         new_policy[(x,y)] = np.array([tow_direction_prob if a == 'D' or a == 'R' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                         (tow_direction_prob  if a == 'D' or a == 'R' else non_target_prob)\
-                        #                         for a in self.actions}
                     if x_distance < 0 and y_distance > 0 and i == 1:
                         new_policy[(x,y)] = np.array([tow_direction_prob if a == 'D' or a == 'L' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                         (tow_direction_prob  if a == 'D' or a == 'L' else non_target_prob)\
-                        #                         for a in self.actions}
                     if x_distance > 0 and y_distance > 0 and i == 2:
                         new_policy[(x,y)] = np.array([tow_direction_prob if a == 'U' or a == 'L' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                         (tow_direction_prob  if a == 'U' or a == 'L' else non_target_prob)\
-                        #                         for a in self.actions}
                     if x_distance > 0 and y_distance < 0 and i == 3:
                         new_policy[(x,y)] = np.array([tow_direction_prob if a == 'U' or a == 'R' 
                                                       else non_target_prob for a in self.actions]) 
-                        # {a : \
-                        #                         (tow_direction_prob  if a == 'U' or a == 'R' else non_target_prob)\
-                        #                         for a in self.actions}
                         
         for state , possible_actions in new_policy.copy().items():
             prob_actions = possible_actions / np.sum(possible_actions)  # normilizing the probabilities
@@ -125,7 +110,8 @@ class Agent:
             if environment.isTerminal(state):
                 action = np.random.choice(action_list)
             else:
-                action = np.random.choice(self.actions, p=prob_actions)
+                action = self.actions[np.argmax(prob_actions)]
+                # action = np.random.choice(self.actions, p=prob_actions)
             deterministic_policy[state] = action
 
         return deterministic_policy
@@ -137,7 +123,7 @@ class Agent:
                 rest_of_actions.remove(action)
 
         if len(rest_of_actions) == 0:
-            #print('no action found for Agent::argMaxAction')
+            #logging.info('no action found for Agent::argMaxAction')
             return None
         elif len(rest_of_actions) == 1:
             return rest_of_actions[0]  
@@ -152,7 +138,7 @@ class Agent:
                     mx_nxt_reward = nxt_reward
             return action
 
-    def evaluatePolicyLoop_MC(self, environment:GridWorld, policy=None, samples=1000, max_steps=200, gamma=0.9):
+    def evaluatePolicyLoop_MC(self, environment:GridWorld, policy=None, samples=500, max_steps=50, gamma=0.9):
         try:
             it = iter(policy)
         except TypeError:
@@ -169,7 +155,7 @@ class Agent:
             valid_state_index = np.random.choice(len(environment.validStates))
             state = environment.validStates[valid_state_index]
             episode = [] # sample an episode
-            recieved_reward = []
+            recieved_rewards = []
             while steps < max_steps:
                 episode.append(state)
                 action = np.random.choice(self.actions, p=policy[state])
@@ -177,21 +163,21 @@ class Agent:
                 # if in a terminal state -> get reward and break
                 if environment.isTerminal(state):
                     reward = environment.getReward(state, state, action)
-                    recieved_reward.append(reward)
+                    recieved_rewards.append(reward)
                     break
                 # if not in a terminal state -> take step , get reward and continue
                 new_state = environment.interact(state, action)
                 reward = environment.getReward(state, new_state, action)
-                recieved_reward.append(reward)
+                recieved_rewards.append(reward)
                 state = new_state
                 steps += 1
 
             terminal_state = episode[-1] # either terminal or the last state in the sequence
-            acummulated_reward = recieved_reward[-1] # last recieved reward
+            acummulated_reward = recieved_rewards[-1] # last recieved reward
             returns_s[terminal_state] += acummulated_reward
             occurences_s[terminal_state] += 1
             for index , state in enumerate(reversed(episode[:-1])):
-                acummulated_reward = recieved_reward[index] + gamma * acummulated_reward
+                acummulated_reward = recieved_rewards[index] + gamma * acummulated_reward
                 if state not in episode[:index]:
                     returns_s[state] += acummulated_reward
                     occurences_s[state] += 1
@@ -211,14 +197,18 @@ class Agent:
     def getActionProb(self, state, action): 
         try:
             if len(self.policy) == 0 or state not in self.policy.keys() or action not in self.actions:
+                if len(self.actions) == 0:
+                    logging.info('Agent::getActionProb:: agent has no actions avaolable')
+                    return 1
                 return 1/len(self.actions)
             else:
                 return self.policy[state][self.actions.index(action)]
         except IndexError:
-            #print('Agent::getActionProb::IndexError')
-            #print('state : ', state)
-            #print('action : ', action)
-            #print('policy : ', self.policy) 
+            logging.info('Agent::getActionProb::IndexError')
+            return 1
+            #logging.info('state : ', state)
+            #logging.info('action : ', action)
+            #logging.info('policy : ', self.policy) 
             pass
         
     
@@ -227,6 +217,7 @@ class Agent:
         expectedRewards = [-np.inf] * len(self.actions)
         for index , action in enumerate(self.actions):
             actionProb = self.getActionProb(environment.state, action) # actionProb = Pi(a|s)
+            # logging.info('evaluateValueOfState: actionProb: ',actionProb)
             if actionProb == 0 or action == None:
                 continue
 
@@ -238,19 +229,21 @@ class Agent:
                     expectedReward += state_expectedReward
                     continue
                 value_state = sv_old[state]
+                # print('#################### value_state : ', value_state)
                 transistion_Prob = environment.transitionProbFunc(environment.state, state, action)
                 state_expectedReward = transistion_Prob * (environment.getReward(environment.state, state, action) +\
                                         gamma * value_state)
                 expectedReward += state_expectedReward
             expectedRewards[index] = expectedReward
-            value_action = actionProb * expectedReward
-            # try:
-            #     value_action = actionProb * expectedReward
-            # except TypeError:
-            #     #print('actionProb = ', actionProb)
-            #     #print('expectedReward = ', expectedReward)
-            #     pass
-            value_action = 0
+            # value_action = actionProb * expectedReward
+            try:
+                value_action = actionProb * expectedReward
+            except TypeError:
+                logging.info('actionProb = ', actionProb)
+                logging.info('expectedReward = ', expectedReward)
+                value_action = 0
+                pass
+            
             value += value_action
         
         if len(self.policy) == 0:
@@ -301,6 +294,192 @@ class Agent:
         environment.reset()
 
         return sv_new , iteratoin
+    
+# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
+# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
+# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
+# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
+# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
 
+# the problem is with using self.policy everywhere , so that we baiscally compare it to itself each turn
 
+    def isConvergedPolicy(self, policy_old, policy_new, method='exact'):
+        if method == 'exact':
+        # Return whether two dicts of arrays are exactly equal
+            if policy_old.keys() != policy_new.keys():
+                return False
+            return all(np.array_equal(policy_old[key], policy_new[key]) for key in policy_old)
+    
+        else:
+        # Return whether two dicts of arrays are roughly equal
+            if policy_old.keys() != policy_new.keys():
+                return False
+            return all(np.allclose(policy_old[key], policy_new[key]) for key in policy_old)
 
+    def policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf, gamma = 0.9, theta = 0.01, **kwargs):
+        print('######## ----------- START POLICY ITERATION ------------------##########')
+        prevPolicy = copy.deepcopy(policy)
+        improvedPolicy = None
+        iteration = 0
+        while iteration < max_iterations:
+            self.stateValueFunc = {}
+            improvedPolicy = self.improvePolicy(environment,prevPolicy, gamma=gamma, **kwargs)
+            if self.isConvergedPolicy(prevPolicy,improvedPolicy,method='exact'): # maybe check with loops
+                break
+            prevPolicy = improvedPolicy
+            iteration += 1
+
+        # self.stateValueFunc = { state : value for state, value in np.ndenumerate(self.stateValueFunc) if state in environment.getValidStates()}
+        self.policy = improvedPolicy
+        return improvedPolicy, iteration
+
+    def improvePolicy(self, environment:GridWorld, policy, gamma = 0.9, evaluationMethod='MC', **kwargs):
+        policy = copy.deepcopy(policy)
+        improvedGreedyPolicy = {}
+        if evaluationMethod == 'MC':
+            improvedGreedyPolicy = self.evaluateAndPickGreedy_MC(environment, policy, gamma=gamma, **kwargs)
+        elif evaluationMethod == 'DP':
+            if len(self.stateValueFunc) == 0:
+                self.evaluatePolicy(environment,policy, gamma=gamma, **kwargs)
+            improvedGreedyPolicy = self.GreedyPolicy_DP(environment, gamma=gamma, **kwargs)
+        # self.policy = improvedGreedyPolicy
+        return improvedGreedyPolicy
+    
+    def evaluatePolicy(self, environment:GridWorld,policy, gamma=0.9, max_iterations=100, evaluationMethod='DP', **kwargs):
+        self.policy = copy.deepcopy(policy)
+        sv_old = None
+        sv_new = np.zeros(shape=environment.grid.shape)
+        convergedStates = np.zeros(0)
+        iteratoin = 0
+        if evaluationMethod == 'DP':
+            while len(convergedStates) < environment.grid.size and iteratoin < max_iterations:
+                sv_old = sv_new
+                sv_new = self.evaluatePolicyLoop_DP(environment,sv_old, convergedStates, gamma, **kwargs)
+                # self.stateValueFunc = { state : value for state, value in np.ndenumerate(sv_new) if state in environment.getValidStates()}
+                convergedStates = self.getConvergedStates(sv_old, sv_new, **kwargs)
+                iteratoin += 1
+        elif evaluationMethod == 'MC':
+            while len(convergedStates) < environment.grid.size and iteratoin < max_iterations:
+                sv_old = sv_new
+                sv_new = self.evaluatePolicyLoop_MC(environment,policy=self.policy, gamma=gamma)
+                # self.stateValueFunc = { state : value for state, value in np.ndenumerate(sv_new) if state in environment.getValidStates()}
+                convergedStates = self.getConvergedStates(sv_old, sv_new, **kwargs)
+                iteratoin += 1
+            # sv_new = self.evaluatePolicyLoop_MC(environment,policy=self.policy, gamma=gamma)
+        
+        self.stateValueFunc = { state : value for state, value in np.ndenumerate(sv_new) if state in environment.getValidStates()}
+        environment.reset()
+
+    def GreedyPolicy_DP(self, environment:GridWorld, gamma=0.9, epsilon=0.2,anneiling_factor=1, **kwargs):     
+        # for every valid state , try all actions and choose the one with the highest expected value
+        if anneiling_factor != 0:
+            epsilon *= anneiling_factor 
+        greedyPolicy = {}
+        counter = 0
+        for state in environment.getValidStates():
+            counter += 1
+            max_action_value_pair = (None, -np.inf)
+            for action in self.actions:
+                nextState = environment.lookAhead(state, action)
+                possible_states = environment.reachableStates(state, action)
+                expectedRward = 0 # action-value function
+                for new_state in possible_states:
+                    if environment.isTerminal(new_state):
+                        action_expectedReward = environment.getReward(state,new_state,action)
+                        expectedRward += action_expectedReward
+                        continue
+                    transitionProb = environment.transitionProbFunc(state, nextState, action)
+                    action_expectedReward = transitionProb * (environment.getReward(state,nextState,action)\
+                                            + gamma * self.stateValueFunc[nextState])
+                    expectedRward += action_expectedReward
+
+                if expectedRward > max_action_value_pair[1]:
+                    max_action_value_pair = (action, expectedRward)
+            index_of_action = self.actions.index(max_action_value_pair[0])
+            greedyPolicy[state] = np.array([( 1 - epsilon ) + ( epsilon/len(self.actions) ) if i == index_of_action 
+                             else epsilon/len(self.actions)  for i in range(len(self.actions))])
+        # self.policy = policy
+        return greedyPolicy
+    
+    def evaluateAndPickGreedy_MC(self, environment:GridWorld, policy=None, samples=50000, max_steps=50, gamma=0.9, epsilon=0.2,anneiling_factor=0.99,):
+        try:
+            it = iter(policy)
+        except TypeError:
+            policy = self.policy
+        if len(policy) != len(environment.getValidStates()):
+            raise ValueError('no complete valid policy provided for the MC policy evaluation')
+        
+        greedyPolicy = {}
+        env_shape = environment.grid.shape
+        Qsa_new = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
+        print(Qsa_new.shape)
+        returns_s = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
+        occurences_s = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
+        i = 0
+        while i < samples:
+            i += 1
+            steps = 0
+            valid_state_index = np.random.choice(len(environment.validStates))
+            state = environment.validStates[valid_state_index]
+            action = np.random.choice(self.actions)
+            new_state = environment.interact(state, action)
+            episode = [] # sample an episode
+            recieved_rewards = []
+
+            episode.append((state,action))
+            # if in a terminal state -> get reward and break
+            if environment.isTerminal(state):
+                reward = environment.getReward(state, new_state, action)
+                recieved_rewards.append(reward)
+                break
+            # if not in a terminal state -> take step , get reward and continue
+            reward = environment.getReward(state, new_state, action)
+            recieved_rewards.append(reward)
+            state = new_state
+            steps += 1
+            while steps < max_steps:
+                action = np.random.choice(self.actions, p=policy[state])
+                episode.append((state,action))
+                new_state = environment.interact(state, action)
+                # if in a terminal state -> get reward and break
+                if environment.isTerminal(state):
+                    reward = environment.getReward(state, new_state, action)
+                    recieved_rewards.append(reward)
+                    break
+                # if not in a terminal state -> take step , get reward and continue
+                reward = environment.getReward(state, new_state, action)
+                recieved_rewards.append(reward)
+                state = new_state
+                steps += 1
+                
+            terminal_state = episode[-1] # either terminal or the last state in the sequence
+            acummulated_reward = recieved_rewards[-1] # last recieved reward
+            action_index = self.actions.index(terminal_state[1])
+            state_index = terminal_state[0]
+            index_state_action = (state_index[0],state_index[1],action_index)
+            returns_s[index_state_action] += acummulated_reward
+            occurences_s[index_state_action] += 1
+            for index , state_action in enumerate(reversed(episode[:-1])):
+                acummulated_reward = recieved_rewards[index] + gamma * acummulated_reward
+                if state_action not in episode[:index]:
+                    action_index = self.actions.index(terminal_state[1])
+                    state_index = state_action[0]
+                    index_state_action = (state_index[0],state_index[1],action_index)
+                    returns_s[index_state_action] += acummulated_reward
+                    occurences_s[index_state_action] += 1
+
+        print('## GreedyPolicy_MC: returns_s : ', returns_s)
+        occured_states = (occurences_s > 0)
+        Qsa_new[occured_states] = np.divide(returns_s[occured_states], occurences_s[occured_states])
+        Qsa_new = np.around(Qsa_new, 3)
+        # self.actionValueFunc = { state : value for state, value in np.ndenumerate(Qsa_new) if state in environment.getValidStates()}
+
+        for state in environment.getValidStates():
+            index_max_action = np.argmax(Qsa_new[state[0],state[1],:])
+            greedyPolicy[state] = np.array([( 1 - epsilon ) + ( epsilon/len(self.actions) ) if i == index_max_action 
+                             else epsilon/len(self.actions)  for i in range(len(self.actions))])
+
+        print('## GreedyPolicy_MC: greedyPolicy : ', len(greedyPolicy))
+        print('## GreedyPolicy_MC: Qsa_new : ', Qsa_new)    
+        return greedyPolicy
+        # return Qsa_new
