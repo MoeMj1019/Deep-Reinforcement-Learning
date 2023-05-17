@@ -67,15 +67,16 @@ class Render:
             # ax.grid(axis='both', color='0.95')
             axes.set_title(title)
 
-    def draw_values(self, axes:plt.Axes,**kwargs): # draw values on the grid
+    def draw_values(self, axes:plt.Axes,text_color='black',**kwargs): # draw values on the grid
         state_values = self.agent.stateValueFunc
         policy = self.agent.policy
         symbols = {'L':'←','U':'↑','R':'→', 'D':'↓','goal':'┼','negative_goal':'─'}
+
         if isinstance(state_values, dict):
             x_offset = kwargs.get('sv_x_offset', 0.5)
             y_offset = kwargs.get('sv_y_offset', 0.8)   
             for key , value in state_values.items():
-                text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color='black')
+                text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color=text_color)
                 text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
                                 key[0]*(self.scale + 1) + (self.scale * y_offset),
                                 symbols.get(value , value) , text_kwargs)
@@ -83,7 +84,7 @@ class Render:
             x_offset = kwargs.get('policy_x_offset', 0.5)
             y_offset = kwargs.get('policy_y_offset', 0.4)
             for key , value in policy.items(): 
-                text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color='black')
+                text_kwargs = dict(ha='center', va='center', fontsize=self.scale, color=text_color)
                 try:
                     if key in self.env.terminalStates.get('goal', []):
                         text = axes.text(key[1]*(self.scale + 1) + (self.scale * x_offset),
@@ -113,14 +114,23 @@ class Render:
         
         x = state[0]*(self.scale +1)+1
         y = state[1]*(self.scale +1)+1
-        if isinstance(fill,np.ndarray):
+        if isinstance(fill,np.ndarray) or isinstance(fill,tuple) and len(fill) == img.shape[-1]:
             img[x:x+self.scale,y:y+self.scale,:] = fill
         else:
             img[x:x+self.scale,y:y+self.scale,:] = colors.get(fill, (0,0,0,1))
 
     def colorMap(self,img):
+        # color shortcuts blue
+        for state in self.env.terrain.get('shortcut', []):
+            self.colorState(img,state,(0,0,1,0.7))
+
+        # color walls grey
+        for state in self.env.terrain.get('wall', []):
+            self.colorState(img,state,'grey')
+        
+        # color states based on their values
         state_values = self.agent.stateValueFunc
-        if isinstance(state_values, dict):
+        if isinstance(state_values, dict) and len(state_values) > 0:
             v_max = max([v**2 for v in state_values.values()])
             v_min = min(state_values.values())
 
@@ -130,9 +140,11 @@ class Render:
                 y = state[1]*(self.scale +1)+1
                 try:
                     v_scaled = (value - v_min) / (v_max - v_min)
-                    img[x:x+self.scale,y:y+self.scale,:] = (v_scaled,0,v_scaled)
+                    # f(x) = (x - input_start) / (input_end - input_start) * (output_end - output_start) + output_start
+                    # v_scaled = (v_scaled - 0) / (1 - 0) * (1 - 0.2) + 0.2
+                    img[x:x+self.scale,y:y+self.scale,:] = (v_scaled,0,v_scaled,1)
                 except ZeroDivisionError:
-                    img[x:x+self.scale,y:y+self.scale,:] = (1,0,1)
+                    img[x:x+self.scale,y:y+self.scale,:] = (1,0,1,1)
 
     def renderEnv(self,style = 'image', title:str='Gridworld', results=False, **kwargs):
         '''
@@ -142,9 +154,9 @@ class Render:
         if style == 'color map':
             # plt.ion()
             
-            world_img = np.ones(shape=(self.env.hight * (self.scale+1) +1, self.env.width * (self.scale+1) +1, 3), dtype='float')
-            world_img[0::self.scale +1,:,:3] = 0.95 # the +1 for the seperatins
-            world_img[:,0::self.scale+1,:3] = 0.95
+            world_img = np.ones(shape=(self.env.hight * (self.scale+1) +1, self.env.width * (self.scale+1) +1, 4), dtype='float')
+            world_img[0::self.scale +1,:,:3] = 0.9 # the +1 for the seperatins
+            world_img[:,0::self.scale+1,:3] = 0.9
 
             self.colorMap(world_img)
 
@@ -152,7 +164,7 @@ class Render:
             ax.imshow(world_img)
             self.axes_settings(ax ,title)
             if results:
-                self.draw_values(ax)
+                self.draw_values(ax, text_color=(0.9,0.9,0.9))
             plt.draw()
             # plt.show()
         # -----------------------------------------

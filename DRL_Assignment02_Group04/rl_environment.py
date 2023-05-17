@@ -8,7 +8,7 @@ class GridWorld:
     a state is a tuple (x,y) 
     '''
     def __init__(self,width = 5, hight = 5, startState=(0,0), terminalState={}, terrain={} ,possible_actions=None,
-                actions_vectors=None, setRewards={} , environmentDynamics='deterministic') -> None:
+                actions_vectors=None, setRewards={} , environmentDynamics='stochastic') -> None:
         '''
         a state is a tuple (x,y) 
         width : width of environment
@@ -63,6 +63,9 @@ class GridWorld:
     def __updateValidStates(self):
         valid_states_indecies = np.isin(self.grid, [0,1], invert=False).nonzero()
         self.validStates = tuple(zip(valid_states_indecies[0],valid_states_indecies[1]))
+
+    def configurations(self,size=(5,5),config=0): # random
+        pass
 
     def addTerminal(self, *type_value_pairs):
         for pair in  type_value_pairs:
@@ -236,9 +239,9 @@ class GridWorld:
 
     def getReward(self, old_state, new_state, action): # returns the reward for a given transition
         # if agent is at terminal states
-        if old_state in self.terminalStates['goal']:
+        if old_state in self.terminalStates.get('goal',[]):
             return self.setRewards.get('goal',1)
-        if old_state in self.terminalStates['negative_goal']:
+        if old_state in self.terminalStates.get('negative_goal',[]):
             return self.setRewards.get('negative_goal',-1)
         # else deafult reward
         return self.setRewards.get('default',-0.02)

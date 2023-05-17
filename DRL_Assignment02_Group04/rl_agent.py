@@ -16,6 +16,7 @@ class Agent:
     agent class
     '''
     def __init__(self, environment = GridWorld(), actions = []) -> None:
+        # self.env = environment
         self.states = []
         self.actions = ['L', 'U', 'R', 'D'] # default actions
         if actions:
@@ -25,7 +26,7 @@ class Agent:
         self.actionValueFunc = {} # one item is ( (state,action) , value ) exp. ( (2,2),'U') , 0.6 )
         self.policy = {} # one item is ( state , probabilities list acording to the action list ) exp. ( (2,2), [0.1,0.2,0.3,0.4] )
         
-        for x,y in np.ndindex(environment.grid.shape):
+        for x,y in environment.getValidStates():
             self.stateValueFunc[(x,y)] = 0
 
     def takeAction(self, environment:GridWorld, action): # take action (deterministicly) and return new state
@@ -34,19 +35,25 @@ class Agent:
         return environment.state
 
     def reset(self,environment:GridWorld):
-        self.states = [environment.state]
+        self.states = [environment.startState]
         self.policy = {}
         self.stateValueFunc = {}
         # for x,y in np.ndindex(environment.grid.shape):
         self.stateValueFunc= {state : 0 for state in environment.getValidStates()}
         environment.reset()
         
-    def updatePolicy(self, environment:GridWorld): # update policy based on state value function
+        
+    def updatePolicy(self, environment:GridWorld, policy=None): # update policy based on state value function
+        if policy == None:
+            policy = self.policy
+
         for state in environment.getValidStates():
             if environment.isValidState(state):
-                self.policy[state] = self.argMaxAction(environment,state)
+                policy[state] = self.argMaxAction(environment,state)
             else:
-                self.policy[state] = None
+                policy[state] = None
+        return policy
+    
 
     def policyGenerator(self,environment:GridWorld, explorationRate=0.2): # heuristic policy
         new_policy = {}
@@ -60,9 +67,11 @@ class Agent:
                 new_policy[state] = np.array([equal_prob for a in self.actions]) 
 
             if environment.isValidState((x,y)):
-                goal = environment.terminalStates.get('goal' , [(x,y)])
-                x_distance = x - goal[0][0]
-                y_distance = y - goal[0][1]
+                goals = environment.terminalStates.get('goal' , [(x,y)])
+                dist_state_goals = np.linalg.norm(np.array(state) - np.array(goals), axis=1)
+                goal = goals[np.argmin(dist_state_goals)]
+                x_distance = x - goal[0]
+                y_distance = y - goal[1]
                 one_direction_prob = round(1 - explorationRate + (explorationRate / action_count) , 2)
                 tow_direction_prob = round( (1 - explorationRate)/2 + (explorationRate / action_count) , 2)
                 non_target_prob = round(explorationRate / action_count , 2)
@@ -102,19 +111,25 @@ class Agent:
             new_policy[state] = prob_actions
 
         return new_policy
+    
 
-    def prob_to_determin_policy(self,environment:GridWorld, policy:dict): # need completion
+    def prob_to_determin_policy(self,environment:GridWorld, policy:dict,method='stochastic'): # need completion
         deterministic_policy = {}
         action_list = self.actions.copy()
         for state , prob_actions in policy.items():
             if environment.isTerminal(state):
                 action = np.random.choice(action_list)
             else:
-                action = self.actions[np.argmax(prob_actions)]
-                # action = np.random.choice(self.actions, p=prob_actions)
+                if method == 'stochastic':
+                    action = np.random.choice(self.actions, p=prob_actions)
+                elif method == 'greedy':
+                    action = self.actions[np.argmax(prob_actions)]
+                else:  
+                    action = np.random.choice(self.actions, p=prob_actions)
             deterministic_policy[state] = action
 
         return deterministic_policy
+    
 
     def argMaxAction(self,environment:GridWorld, state): # approximation of argmax action
         rest_of_actions = self.actions.copy()
@@ -122,10 +137,10 @@ class Agent:
             if environment.lookAhead(state, action) == state:
                 rest_of_actions.remove(action)
 
-        if len(rest_of_actions) == 0:
-            #logging.info('no action found for Agent::argMaxAction')
-            return None
-        elif len(rest_of_actions) == 1:
+        # if len(rest_of_actions) == 0:
+        #     #logging.info('no action found for Agent::argMaxAction')
+        #     return None
+        if len(rest_of_actions) == 1:
             return rest_of_actions[0]  
         else:
             action = np.random.choice(rest_of_actions)  
@@ -137,6 +152,7 @@ class Agent:
                     action = a
                     mx_nxt_reward = nxt_reward
             return action
+        
 
     def evaluatePolicyLoop_MC(self, environment:GridWorld, policy=None, samples=500, max_steps=50, gamma=0.9):
         try:
@@ -154,9 +170,12 @@ class Agent:
             steps = 0
             valid_state_index = np.random.choice(len(environment.validStates))
             state = environment.validStates[valid_state_index]
+            if np.random.uniform(0,1) < 0.25:
+                state = environment.startState
             episode = [] # sample an episode
             recieved_rewards = []
             while steps < max_steps:
+                steps += 1
                 episode.append(state)
                 action = np.random.choice(self.actions, p=policy[state])
 
@@ -170,13 +189,13 @@ class Agent:
                 reward = environment.getReward(state, new_state, action)
                 recieved_rewards.append(reward)
                 state = new_state
-                steps += 1
 
             terminal_state = episode[-1] # either terminal or the last state in the sequence
             acummulated_reward = recieved_rewards[-1] # last recieved reward
             returns_s[terminal_state] += acummulated_reward
             occurences_s[terminal_state] += 1
             for index , state in enumerate(reversed(episode[:-1])):
+                index = len(episode) - index - 2
                 acummulated_reward = recieved_rewards[index] + gamma * acummulated_reward
                 if state not in episode[:index]:
                     returns_s[state] += acummulated_reward
@@ -188,7 +207,8 @@ class Agent:
         self.stateValueFunc = { state : value for state, value in np.ndenumerate(sv_new) if state in environment.getValidStates()}
         return sv_new
     
-    def getConvergedStates(self, sv_old, sv_new , theta = 0.001):
+    
+    def getConvergedStates(self, sv_old, sv_new , theta = 0.001, **kwargs):
         diff = abs(sv_old-sv_new)
         # return np.where(diff < theta)[0]
         indecies = np.where(diff < theta)
@@ -250,6 +270,7 @@ class Agent:
             value = max(expectedRewards)
         return round(value, 3)
 
+
     def evaluatePolicyLoop_DP(self, environment:GridWorld, sv_old=None, convergedStates=None , gamma=0.9 , ignore=0.3, **kwargs):
         try:
             it = iter(sv_old)
@@ -295,15 +316,13 @@ class Agent:
 
         return sv_new , iteratoin
     
-# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
-# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
-# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
-# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
-# ---------------------------------------------------- Policy Iteration ---------------------------------------------------- #
+# ------------------------------------------------ Util Policy Iteration --------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
 
-# the problem is with using self.policy everywhere , so that we baiscally compare it to itself each turn
-
-    def isConvergedPolicy(self, policy_old, policy_new, method='exact'):
+    def isConvergedPolicy(self, policy_old, policy_new, method='close', **kwargs):
         if method == 'exact':
         # Return whether two dicts of arrays are exactly equal
             if policy_old.keys() != policy_new.keys():
@@ -314,34 +333,46 @@ class Agent:
         # Return whether two dicts of arrays are roughly equal
             if policy_old.keys() != policy_new.keys():
                 return False
-            return all(np.allclose(policy_old[key], policy_new[key]) for key in policy_old)
+            return all(np.allclose(policy_old[key], policy_new[key],rtol=kwargs.get('rtol',1e-2)) for key in policy_old)
+        
+    # exponentialy wighted average
+    def exp_wighted_avg(self,x,y,alpha=0.9):
+        return x * alpha + (y * (1-alpha))
+        
+    
+# --------------------------------------------------- DP Policy Iteration -------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
 
-    def policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf, gamma = 0.9, theta = 0.01, **kwargs):
-        print('######## ----------- START POLICY ITERATION ------------------##########')
+    def DP_policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf, converged_condition='close',
+                           gamma = 0.9, epsilon=0.01,annealing=0.99, **kwargs):
+        logging.info('######## ----------- START DP POLICY ITERATION ------------------##########')
+        # self.reset(environment)
         prevPolicy = copy.deepcopy(policy)
         improvedPolicy = None
         iteration = 0
+
         while iteration < max_iterations:
-            self.stateValueFunc = {}
-            improvedPolicy = self.improvePolicy(environment,prevPolicy, gamma=gamma, **kwargs)
-            if self.isConvergedPolicy(prevPolicy,improvedPolicy,method='exact'): # maybe check with loops
+            self.stateValueFunc = {} # reset state value function for the DP evaluation
+            improvedPolicy = self.improvePolicy(environment,prevPolicy, gamma=gamma,epsilon=epsilon , **kwargs)
+            if self.isConvergedPolicy(prevPolicy,improvedPolicy,method=converged_condition): # if policy is converged
                 break
             prevPolicy = improvedPolicy
             iteration += 1
+            epsilon *= annealing
 
         # self.stateValueFunc = { state : value for state, value in np.ndenumerate(self.stateValueFunc) if state in environment.getValidStates()}
         self.policy = improvedPolicy
         return improvedPolicy, iteration
 
-    def improvePolicy(self, environment:GridWorld, policy, gamma = 0.9, evaluationMethod='MC', **kwargs):
+    def improvePolicy(self, environment:GridWorld, policy, gamma = 0.9, **kwargs):
         policy = copy.deepcopy(policy)
         improvedGreedyPolicy = {}
-        if evaluationMethod == 'MC':
-            improvedGreedyPolicy = self.evaluateAndPickGreedy_MC(environment, policy, gamma=gamma, **kwargs)
-        elif evaluationMethod == 'DP':
-            if len(self.stateValueFunc) == 0:
-                self.evaluatePolicy(environment,policy, gamma=gamma, **kwargs)
-            improvedGreedyPolicy = self.GreedyPolicy_DP(environment, gamma=gamma, **kwargs)
+        if len(self.stateValueFunc) == 0:
+            self.evaluatePolicy(environment,policy, gamma=gamma, **kwargs)
+        improvedGreedyPolicy = self.GreedyPolicy_DP(environment, gamma=gamma, **kwargs)
         # self.policy = improvedGreedyPolicy
         return improvedGreedyPolicy
     
@@ -400,86 +431,97 @@ class Agent:
                              else epsilon/len(self.actions)  for i in range(len(self.actions))])
         # self.policy = policy
         return greedyPolicy
-    
-    def evaluateAndPickGreedy_MC(self, environment:GridWorld, policy=None, samples=50000, max_steps=50, gamma=0.9, epsilon=0.2,anneiling_factor=0.99,):
-        try:
-            it = iter(policy)
-        except TypeError:
-            policy = self.policy
-        if len(policy) != len(environment.getValidStates()):
-            raise ValueError('no complete valid policy provided for the MC policy evaluation')
-        
-        greedyPolicy = {}
-        env_shape = environment.grid.shape
-        Qsa_new = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
-        print(Qsa_new.shape)
-        returns_s = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
-        occurences_s = np.zeros(shape=(env_shape[0], env_shape[1], len(self.actions)))
-        i = 0
-        while i < samples:
-            i += 1
-            steps = 0
-            valid_state_index = np.random.choice(len(environment.validStates))
-            state = environment.validStates[valid_state_index]
-            action = np.random.choice(self.actions)
-            new_state = environment.interact(state, action)
-            episode = [] # sample an episode
-            recieved_rewards = []
 
-            episode.append((state,action))
+
+# -------------------------------------------------- MC Policy Iteration --------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+# -------------------------------------------------------------------------------------------------------------------------- #
+
+    def MC_policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf,steps_per_iter=100, converge_condition='close',
+                            gamma = 0.9, epsilon=0.2, annealing=0.99, **kwargs):
+        logging.info('######## ----------- START MC POLICY ITERATION ------------------##########')
+        # self.reset(environment)
+        prevPolicy = copy.deepcopy(policy)
+        improvedPolicy = None
+        iteration = 0
+
+        exploration_rate = kwargs.get('exploration_rate',0.3)
+
+        Q_sa = {}
+        returns_sa = {(s,a):[] for s in environment.getValidStates() for a in self.actions}
+        # the main loop
+        while iteration < max_iterations:
+            iteration += 1
+            # sample an episode
+            # episode is a list of tuples (state, action, reward)
+            episode = self.MC_sample_episode(environment, policy, max_steps=steps_per_iter,exploration_rate=exploration_rate, **kwargs)
+            # update the Q_values and the returns
+            Q_sa , returns_sa = self.MC_evaluate_Qsa(episode, Q_sa, returns_sa, gamma=gamma, **kwargs)
+            # update the policy by increasing the probability of the greedy action on behalf of all other actions
+            improvedPolicy = self.MC_improvePolicy(environment,Q_values=Q_sa, epsilon=epsilon, **kwargs)
+
+            # check for convergence
+            if self.isConvergedPolicy(prevPolicy,improvedPolicy,method=converge_condition,**kwargs): # if policy is converged
+                break
+            prevPolicy = improvedPolicy
+            epsilon *= annealing
+            exploration_rate *= annealing
+
+        self.policy = improvedPolicy
+        return improvedPolicy, iteration
+    
+    def MC_evaluate_Qsa(self, episode, Q_sa, returns_sa, gamma=0.9, **kwargs):
+        # an entry in the episode is a tuple (state, action, reward)
+        acummulated_reward = 0
+        for index , (s,a,r) in enumerate(reversed(episode[:])):
+            index = len(episode) - index - 1
+            acummulated_reward = r + gamma * acummulated_reward
+            if (s,a) not in [it[:2] for it in episode[:index]]:
+                returns_sa[(s,a)] += [acummulated_reward]
+                Q_sa[(s,a)] = np.sum(returns_sa[(s,a)]) / len(returns_sa[(s,a)]) # TODO exponential wighted average
+                Q_sa[(s,a)] = np.around(Q_sa[(s,a)], 3)
+
+        return Q_sa, returns_sa
+    
+    def MC_sample_episode(self, environment:GridWorld, policy, max_steps=1000, exploration_rate=0.1, **kwargs):
+        episode = [] # sample an episode
+        steps = 0
+
+        valid_state_index = np.random.choice(len(environment.validStates))
+        state = environment.validStates[valid_state_index]
+        # start at the start state 20% of the time
+        # if np.random.uniform() < 0.2:
+        #     state = environment.startState
+
+        while steps < max_steps:
+            steps += 1
+            if np.random.uniform(0,1) <= exploration_rate:
+               action = np.random.choice(self.actions)
+            else:
+                action = np.random.choice(self.actions, p=policy[state])
+            new_state = environment.interact(state, action)
             # if in a terminal state -> get reward and break
             if environment.isTerminal(state):
                 reward = environment.getReward(state, new_state, action)
-                recieved_rewards.append(reward)
+                episode.append((state,action,reward))
                 break
             # if not in a terminal state -> take step , get reward and continue
             reward = environment.getReward(state, new_state, action)
-            recieved_rewards.append(reward)
+            episode.append((state,action,reward))
             state = new_state
-            steps += 1
-            while steps < max_steps:
-                action = np.random.choice(self.actions, p=policy[state])
-                episode.append((state,action))
-                new_state = environment.interact(state, action)
-                # if in a terminal state -> get reward and break
-                if environment.isTerminal(state):
-                    reward = environment.getReward(state, new_state, action)
-                    recieved_rewards.append(reward)
-                    break
-                # if not in a terminal state -> take step , get reward and continue
-                reward = environment.getReward(state, new_state, action)
-                recieved_rewards.append(reward)
-                state = new_state
-                steps += 1
-                
-            terminal_state = episode[-1] # either terminal or the last state in the sequence
-            acummulated_reward = recieved_rewards[-1] # last recieved reward
-            action_index = self.actions.index(terminal_state[1])
-            state_index = terminal_state[0]
-            index_state_action = (state_index[0],state_index[1],action_index)
-            returns_s[index_state_action] += acummulated_reward
-            occurences_s[index_state_action] += 1
-            for index , state_action in enumerate(reversed(episode[:-1])):
-                acummulated_reward = recieved_rewards[index] + gamma * acummulated_reward
-                if state_action not in episode[:index]:
-                    action_index = self.actions.index(terminal_state[1])
-                    state_index = state_action[0]
-                    index_state_action = (state_index[0],state_index[1],action_index)
-                    returns_s[index_state_action] += acummulated_reward
-                    occurences_s[index_state_action] += 1
 
-        print('## GreedyPolicy_MC: returns_s : ', returns_s)
-        occured_states = (occurences_s > 0)
-        Qsa_new[occured_states] = np.divide(returns_s[occured_states], occurences_s[occured_states])
-        Qsa_new = np.around(Qsa_new, 3)
-        # self.actionValueFunc = { state : value for state, value in np.ndenumerate(Qsa_new) if state in environment.getValidStates()}
+        return episode
 
+    def MC_improvePolicy(self, environment:GridWorld, Q_values, epsilon , **kwargs):
+        greedyPolicy = {}
         for state in environment.getValidStates():
-            index_max_action = np.argmax(Qsa_new[state[0],state[1],:])
-            greedyPolicy[state] = np.array([( 1 - epsilon ) + ( epsilon/len(self.actions) ) if i == index_max_action 
+            index_greedy_action = np.argmax([Q_values.get((state,a),0) for a in self.actions])
+            greedyPolicy[state] = np.array([( 1 - epsilon ) + ( epsilon/len(self.actions) ) if i == index_greedy_action 
                              else epsilon/len(self.actions)  for i in range(len(self.actions))])
-
-        print('## GreedyPolicy_MC: greedyPolicy : ', len(greedyPolicy))
-        print('## GreedyPolicy_MC: Qsa_new : ', Qsa_new)    
+            
+            # this is a lazy way to get the best values of the Q_sa function for plotting later on
+            self.stateValueFunc[state] = Q_values.get((state,self.actions[index_greedy_action]),0) # TODO change this
+        # self.policy = improvedGreedyPolicy
         return greedyPolicy
-        # return Qsa_new
