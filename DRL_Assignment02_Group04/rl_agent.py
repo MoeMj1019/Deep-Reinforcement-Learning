@@ -336,7 +336,7 @@ class Agent:
             return all(np.allclose(policy_old[key], policy_new[key],rtol=kwargs.get('rtol',1e-2)) for key in policy_old)
         
     # exponentialy wighted average
-    def exp_wighted_avg(self,x,y,alpha=0.9):
+    def exp_weighted_avg(self,x,y,alpha=0.9):
         return x * alpha + (y * (1-alpha))
         
     
@@ -472,19 +472,6 @@ class Agent:
         self.policy = improvedPolicy
         return improvedPolicy, iteration
     
-    def MC_evaluate_Qsa(self, episode, Q_sa, returns_sa, gamma=0.9, **kwargs):
-        # an entry in the episode is a tuple (state, action, reward)
-        acummulated_reward = 0
-        for index , (s,a,r) in enumerate(reversed(episode[:])):
-            index = len(episode) - index - 1
-            acummulated_reward = r + gamma * acummulated_reward
-            if (s,a) not in [it[:2] for it in episode[:index]]:
-                returns_sa[(s,a)] += [acummulated_reward]
-                Q_sa[(s,a)] = np.sum(returns_sa[(s,a)]) / len(returns_sa[(s,a)]) # TODO exponential wighted average
-                Q_sa[(s,a)] = np.around(Q_sa[(s,a)], 3)
-
-        return Q_sa, returns_sa
-    
     def MC_sample_episode(self, environment:GridWorld, policy, max_steps=1000, exploration_rate=0.1, **kwargs):
         episode = [] # sample an episode
         steps = 0
@@ -497,22 +484,36 @@ class Agent:
 
         while steps < max_steps:
             steps += 1
+            # choose an action according to the policy or explore
             if np.random.uniform(0,1) <= exploration_rate:
                action = np.random.choice(self.actions)
             else:
                 action = np.random.choice(self.actions, p=policy[state])
+            # interact with the environment with the chosen action , get new state and reward and append them to the episode
             new_state = environment.interact(state, action)
-            # if in a terminal state -> get reward and break
-            if environment.isTerminal(state):
-                reward = environment.getReward(state, new_state, action)
-                episode.append((state,action,reward))
-                break
-            # if not in a terminal state -> take step , get reward and continue
             reward = environment.getReward(state, new_state, action)
             episode.append((state,action,reward))
+            # if in a terminal state -> break
+            if environment.isTerminal(state):
+                break
             state = new_state
 
         return episode
+    
+    def MC_evaluate_Qsa(self, episode, Q_sa, returns_sa, gamma=0.9, **kwargs):
+        # an entry in the episode is a tuple (state, action, reward)
+        acummulated_reward = 0
+        for index , (s,a,r) in enumerate(reversed(episode[:])):
+            index = len(episode) - index - 1
+            acummulated_reward = r + gamma * acummulated_reward
+            if (s,a) not in [it[:2] for it in episode[:index]]:
+                returns_sa[(s,a)] += [acummulated_reward]
+                # Q_sa[(s,a)] = self.exp_weighted_avg(Q_sa.get((s,a),0), returns_sa[(s,a)][-1],alpha=0.1) # exponential wighted average
+                Q_sa[(s,a)] = np.mean(returns_sa[(s,a)]) # mean
+                # Q_sa[(s,a)] = np.sum(returns_sa[(s,a)]) / len(returns_sa[(s,a)]) 
+                Q_sa[(s,a)] = np.around(Q_sa[(s,a)], 3)
+
+        return Q_sa, returns_sa
 
     def MC_improvePolicy(self, environment:GridWorld, Q_values, epsilon , **kwargs):
         greedyPolicy = {}
