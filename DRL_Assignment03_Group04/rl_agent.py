@@ -2,6 +2,8 @@ from rl_environment import GridWorld
 import numpy as np
 import pandas as pd
 import time
+
+from tqdm import tqdm
 import copy
 import logging
 import warnings
@@ -385,6 +387,15 @@ class Agent:
 # -------------------------------------------------------------------------------------------------------------------------- #
 # -------------------------------------------------------------------------------------------------------------------------- #
     def improvePolicy_Qgreedy(self, environment:GridWorld, Q_values, epsilon , **kwargs):
+        '''
+        improve the policy by choosing the action with the highest Q_sa value in a given state
+            args:
+                environment: GridWorld
+                Q_values: dict of (state,action) : value
+                epsilon: float
+            return:
+                dict of state : np.array of probabilities  
+        '''
         greedyPolicy = {}
         for state in environment.getValidStates():
             greedyPolicy[state] = self.policyInState_Qgreedy(state, Q_values, epsilon=epsilon) 
@@ -392,12 +403,18 @@ class Agent:
             # this is a lazy way to get the best values of the Q_sa function for plotting later on
             index_greedy_action = np.argmax([Q_values.get((state,a),0) for a in self.actions])
             self.stateValueFunc[state] = Q_values.get((state,self.actions[index_greedy_action]),0) # TODO change this
-        # self.policy = improvedGreedyPolicy
+        self.policy = greedyPolicy
         return greedyPolicy
     
     def policyInState_Qgreedy(self, state, Q_values, epsilon):
         '''
         return a policy in a given state that is greedy with respect to the Q_values
+            args:
+                state: tuple
+                Q_values: dict of (state,action) : value
+                epsilon: float
+            return: 
+                np.array of probabilities
         '''
         index_greedy_action = np.argmax([Q_values.get((state,a),0) for a in self.actions])
         greedyPolicy = np.array([( 1 - epsilon ) + ( epsilon/len(self.actions) ) if i == index_greedy_action
@@ -407,13 +424,14 @@ class Agent:
     def sample_episode_from_policy(self, environment:GridWorld, policy, start_sa:tuple=None, max_steps=1000, exploration_rate=0.1, **kwargs):
         '''
         sample an episode from the environment
-        environment: the environment to sample from
-        policy: a dictionary of the form {state: [action1_prob, action2_prob, ...]}
-        max_steps: maximum number of steps to sample
-        exploration_rate: the probability of choosing a random action instead of the greedy action
-
-        return: 
-            episode: a list of tuples (state, action, reward)
+            args:
+                environment: GridWorld
+                policy: dict of state : np.array of probabilities
+                start_sa: tuple of (state,action) to start the episode from
+                max_steps: int
+                exploration_rate: float
+            return:
+                list of (state,action,reward) tuples
         '''
         if start_sa is None:
             valid_state_index = np.random.choice(len(environment.validStates))
@@ -453,6 +471,19 @@ class Agent:
         return episode
       
     def isConvergedPolicy(self, policy_old, policy_new, method='close', **kwargs):
+        '''
+        check if the policy has converged
+            args:
+                policy_old: dict of state : np.array of probabilities
+                policy_new: dict of state : np.array of probabilities
+                method: str
+                    'exact' : check if the two policies are exactly the same
+                    'close' : check if the two policies are close enough
+                **kwargs: aditional arguments for the 'close' method
+                    atol: float
+            return:
+                bool (True if converged, False otherwise)
+        '''
         if method == 'exact':
         # Return whether two dicts of arrays are exactly equal
             if policy_old.keys() != policy_new.keys():
@@ -467,15 +498,29 @@ class Agent:
         
     # exponentialy wighted average
     def exp_weighted_avg(self,x,y,alpha=0.9):
+        '''
+        return the exponentialy wighted average of two values
+            args:
+                x: float
+                y: float
+                alpha: float
+            return:
+                float
+        '''
         return x * alpha + (y * (1-alpha))
     
     def initialize_Q_values(self, environment:GridWorld, method='zeros', policy=None):
         '''
         Initialize the Q_values dictionary
-        method: 
-            'from policy': initialize the Q_values with the policy probabilities
-            'random': initialize the Q_values with random probabilities
-            'zeros': initialize the Q_values with zeros
+            args:
+                environment: GridWorld
+                method: str
+                    'from policy': initialize the Q_values with the policy probabilities
+                    'random': initialize the Q_values with random probabilities
+                    'zeros': initialize the Q_values with zeros
+                policy: dict of state : np.array of probabilities
+            return:
+                dict of (state,action) : value
         '''
         Q_sa = {}
         if method== 'from policy':
@@ -507,8 +552,8 @@ class Agent:
 # -------------------------------------------------------------------------------------------------------------------------- #
 
     def MC_policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf,steps_per_iter=100, converge_condition='close',
-                            gamma = 0.9, epsilon=0.2, annealing=0.99, track_sa_pairs=None, **kwargs):
-        logging.info('######## ----------- START MC POLICY ITERATION ------------------##########')
+                            gamma = 0.9, epsilon=0.2, annealing=0.99, track_sa_pairs=None,show_pbar=False, **kwargs):
+        # logging.info('######## ----------- START MC POLICY ITERATION ------------------##########')
         # self.reset(environment)
         check_convesion = True
         if converge_condition == 'none':
@@ -532,8 +577,10 @@ class Agent:
 
         start_time = time.time()
         # the main loop
+        prog_bar = tqdm(total=max_iterations, disable= not show_pbar)
         while iteration < max_iterations:
             iteration += 1
+            prog_bar.update(1)
             # sample an episode
             # episode is a list of tuples (state, action, reward)
             episode = self.sample_episode_from_policy(environment, policy, max_steps=steps_per_iter,exploration_rate=exploration_rate, **kwargs)
@@ -563,6 +610,7 @@ class Agent:
         self.policy = improvedPolicy
         measurmets = pd.DataFrame({'iteration':np.arange(1,iteration+1),'episode_returns':episode_returns, 'episode_times':episode_times})
         # logging.info('######## ------------ END MC POLICY ITERATION -------------------##########')
+        prog_bar.close()
         return improvedPolicy, measurmets, tracked_Q_sa
     
     def MC_evaluate_Qsa(self, episode, Q_sa, returns_sa,  gamma=0.9, **kwargs):
@@ -587,8 +635,35 @@ class Agent:
 # -------------------------------------------------------------------------------------------------------------------------- #
     
     def TD_SARSA_policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf,steps_per_iter=100, converge_condition='close',
-                            gamma = 0.9, alpha=0.1, epsilon=0.2, annealing=0.99,track_sa_pairs=None, **kwargs):
-        logging.info('######## ----------- START TD SARSA POLICY ITERATION ------------------##########')
+                            gamma = 0.9, alpha=0.1, epsilon=0.2, annealing=0.99,track_sa_pairs=None,show_pbar=False, **kwargs):
+        '''TD SARSA policy iteration algorithm
+            Args:
+                environment : GridWorld
+                policy : dict
+                    a mapping from states to actions
+                max_iterations : int
+                    the maximum number of iterations
+                steps_per_iter : int
+                    the number of steps to sample from the environment each iteration
+                converge_condition : str
+                    the method to check for convergence, either 'close' or 'exact' or 'none'
+                gamma : float
+                    the discount factor
+                alpha : float
+                    the learning rate
+                epsilon : float
+                    the exploration rate
+                track_sa_pairs : list of tuples (state,action)
+                    the list of (state,action) pairs to track their Q_values
+            Return:
+                improvedPolicy : dict
+                    the improved policy
+                measurmets : pd.DataFrame
+                    a dataframe containing the episode returns and the episode times
+                tracked_Q_sa : dict
+                    a dict containing the tracked Q_values for each (state,action) pair
+        '''
+        # logging.info('######## ----------- START TD SARSA POLICY ITERATION ------------------##########')
         # self.reset(environment)
         check_convesion = True
         if converge_condition == 'none':
@@ -605,12 +680,14 @@ class Agent:
 
         tracked_Q_sa = {pair_sa:[] for pair_sa in track_sa_pairs} if track_sa_pairs is not None and len(track_sa_pairs) > 0 \
                                                                     else None
-        
 
         start_time = time.time()
+
+        prog_bar = tqdm(total=max_iterations,disable= not show_pbar)
         # the main loop
         while iteration < max_iterations:
             iteration += 1
+            prog_bar.update(1)
             # update the Q_values and the returns
             Q_sa , episode_return = self.TD_SARSA_evaluate_Qsa(environment, Q_sa, gamma=gamma, alpha=alpha, epsilon=epsilon,
                                                                 max_steps=steps_per_iter, start_sa=kwargs.get('start_sa',None))
@@ -624,7 +701,7 @@ class Agent:
                 except:
                     raise ValueError('track_sa_pairs must be an iterable of tuples (state,action)')
 
-            # update the policy by increasing the probability of the greedy action on behalf of all other actions
+            # update the policy by increasing the probability of the greedy action on the cost of all other actions
             improvedPolicy = self.improvePolicy_Qgreedy(environment,Q_values=Q_sa, epsilon=epsilon, **kwargs)
 
             episode_times.append(time.time() - start_time)
@@ -641,15 +718,131 @@ class Agent:
 
         measurmets = pd.DataFrame({'iteration':np.arange(1,iteration+1),'episode_returns':episode_returns, 'episode_times':episode_times})
         # logging.info('######## ------------ END TD SARSA POLICY ITERATION -------------------##########')
+        prog_bar.close()
         return improvedPolicy, measurmets, tracked_Q_sa
     
+
+    def gen_TD_SARSA_policyIteration(self, environment:GridWorld,policy, max_iterations=np.inf,steps_per_iter=100, converge_condition='close',
+                            gamma = 0.9, alpha=0.1, epsilon=0.2, annealing=0.99,track_sa_pairs=None, **kwargs):
+        '''generator version of the TD SARSA policy iteration algorithm
+            args:
+                environment : GridWorld
+                policy : dict
+                    a mapping from states to actions
+                max_iterations : int
+                    the maximum number of iterations
+                steps_per_iter : int
+                    the number of steps to sample from the environment each iteration
+                converge_condition : str
+                    the method to check for convergence, either 'close' or 'exact' or 'none'
+                gamma : float
+                    the discount factor
+                alpha : float
+                    the learning rate
+                epsilon : float
+                    the exploration rate
+                track_sa_pairs : list of tuples (state,action)
+                    the list of (state,action) pairs to track their Q_values
+            Return:
+                improvedPolicy : dict
+                    the improved policy
+                measurmets : pd.DataFrame
+                    a dataframe containing the episode returns and the episode times
+                tracked_Q_sa : dict
+                    a dict containing the tracked Q_values for each (state,action) pair
+        '''
+        logging.info('######## ----------- START generator TD SARSA POLICY ITERATION ------------------##########')
+        # self.reset(environment)
+        check_convesion = True
+        if converge_condition == 'none':
+            check_convesion = False
+
+        prevPolicy = copy.deepcopy(policy)
+        improvedPolicy = None
+        iteration = 0
+
+        # exploration_rate = kwargs.get('exploration_rate',0.3)
+        # initialize the Q values to zeros other options are random initialization or from policy
+        Q_sa = self.initialize_Q_values(environment,method='zeros')
+        tracked_Q_sa_return = None
+
+        # get initial measurements values to yieald in the first iteration of the generator
+        if track_sa_pairs is not None:
+                try:
+                    tracked_Q_sa_return = {pair_sa:Q_sa.get(pair_sa, 0) for pair_sa in track_sa_pairs}
+                except:
+                    raise ValueError('track_sa_pairs must be an iterable of tuples (state,action)')
+        measurmets = {'iteration':0,'episode_returns':0, 'episode_times':0}
+        # yield the initial values before training starts
+        yield prevPolicy,Q_sa, measurmets, tracked_Q_sa_return
+        
+        start_time = time.time()
+        # the main loop
+        while iteration < max_iterations:
+            iteration += 1
+            # update the Q_values and the returns
+            Q_sa , episode_return = self.TD_SARSA_evaluate_Qsa(environment, Q_sa, gamma=gamma, alpha=alpha, epsilon=epsilon,
+                                                                max_steps=steps_per_iter, start_sa=kwargs.get('start_sa',None))
+
+            if track_sa_pairs is not None:
+                try:
+                    tracked_Q_sa_return = {pair_sa:Q_sa.get(pair_sa, 0) for pair_sa in track_sa_pairs}
+                except:
+                    raise ValueError('track_sa_pairs must be an iterable of tuples (state,action)')
+
+            # update the policy by increasing the probability of the greedy action on behalf of all other actions
+            improvedPolicy = self.improvePolicy_Qgreedy(environment,Q_values=Q_sa, epsilon=epsilon, **kwargs)
+
+            time_step = time.time() - start_time
+            measurmets = {'iteration':iteration,'episode_returns':episode_return, 'episode_times':time_step}
+            
+    ## -------------------------------------------------------------- YIELD VALUES HERE -------------------------------------------------------------- ##
+            yield improvedPolicy,Q_sa, measurmets, tracked_Q_sa_return
+
+            # check for convergence
+            if check_convesion:
+                if self.isConvergedPolicy(prevPolicy,improvedPolicy,method=converge_condition,**kwargs): # if policy is converged
+                    break
+
+            prevPolicy = improvedPolicy
+            epsilon *= annealing
+            # exploration_rate *= annealing
+
+        self.policy = improvedPolicy
+
+        # measurmets = pd.DataFrame({'iteration':np.arange(1,iteration+1),'episode_returns':episode_returns, 'episode_times':episode_times})
+        # logging.info('######## ------------ END TD SARSA POLICY ITERATION -------------------##########')
+        # return improvedPolicy, measurmets, tracked_Q_sa
+
     def TD_SARSA_evaluate_Qsa(self,environment:GridWorld, Q_sa, start_sa:tuple=None, gamma=0.9, alpha=0.1, epsilon=0.2, max_steps=100, **kwargs):
+        '''evaluate the Q values of the given policy using the TD SARSA algorithm
+            args:
+                environment : GridWorld
+                Q_sa : dict
+                    the Q values of the policy
+                start_sa : tuple (state,action)
+                    the starting state action pair
+                gamma : float
+                    the discount factor
+                alpha : float
+                    the learning rate
+                epsilon : float
+                    the exploration rate
+                max_steps : int
+                    the maximum number of steps
+            return:
+                Q_sa : dict
+                    the updated Q values of the policy
+                episode_return : float
+                    the return of the episode
+        '''
         if start_sa is None:
             valid_state_index = np.random.choice(len(environment.validStates))
             state = environment.validStates[valid_state_index]
-            # start at the start state 20% of the time
-            # if np.random.uniform() < 0.2:
-            #     state = environment.startState
+            # start at the start state 10% of the time
+            if np.random.uniform() < 0.1:
+                state = environment.startState
+            # getting the Q values of the state according to a policy based on the Q values
             state_Qgreedy_policy = self.policyInState_Qgreedy(state,Q_sa,epsilon)
             action = np.random.choice(self.actions,p=state_Qgreedy_policy)
         else:
@@ -669,7 +862,7 @@ class Agent:
             if environment.isTerminal(state):
                 Q_sa[(state,action)] = reward
                 break
-
+            # getting the Q values of the state according to a policy based on the Q values
             state_Qgreedy_policy = self.policyInState_Qgreedy(state_t1,Q_sa,epsilon)
             action_t1 = np.random.choice(self.actions,p=state_Qgreedy_policy)
             Q_sa[(state,action)] += alpha * (reward + gamma * Q_sa[(state_t1,action_t1)] - Q_sa[(state,action)])
